@@ -6,10 +6,16 @@ Filters out YouTube Shorts by checking the /shorts/ URL.
 
 import os
 import requests
+import httplib2
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
 # Load your secret API key from the .env file
+proxy_info = httplib2.ProxyInfo(
+    proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
+    proxy_host='127.0.0.1',
+    proxy_port=15236,
+)
 load_dotenv()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
@@ -19,14 +25,20 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 # Example: youtube.com/@MrBeast → use "@MrBeast"
 # ========================================
 CHANNELS = [
+    "@SiliconValleyGirl",
+    "@lyi",
+    "@马克的技术工作坊",
     "@LatentSpacePod",
+    "@TinaHuang1",
+    "@JeffSu",
     "@ycombinator",
-    "@a16z",
-    "@RedpointAI",
-    "@EveryInc",
-    "@DataDrivenNYC",
+    "@rileybrownai",
+    "@xiao_lin_shuo",
     "@NoPriorsPodcast",
-    "@DwarkeshPatel",
+    "@TheValley101",
+    "@mreflow",
+    "@TomScottGo",
+    "@TED",
 ]
 
 

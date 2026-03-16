@@ -1,11 +1,12 @@
 """
 Part 4: Send Newsletter via Email
-Sends the generated articles as a nicely formatted email newsletter with EPUB attachment.
+Sends the generated articles as a nicely formatted email newsletter with EPUB and PDF attachments.
 """
 
 import os
 import smtplib
 import markdown
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -13,11 +14,20 @@ from email import encoders
 from datetime import datetime
 from dotenv import load_dotenv
 from ebooklib import epub
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib import colors
 
 # Load your credentials
 load_dotenv()
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+PUSHPLUS_TOKEN = os.getenv("PUSHPLUS_TOKEN")
 
 
 def create_epub(articles):
@@ -130,6 +140,223 @@ def create_epub(articles):
     return filepath
 
 
+def push_to_wechat(epub_path, pdf_path, articles):
+    """
+    Push the ebook to WeChat using PushPlus API.
+    """
+    if not PUSHPLUS_TOKEN:
+        print("  ⚠ PUSHPLUS_TOKEN not set, skipping WeChat push")
+        return False
+    
+    try:
+        # Create summary with article titles
+        summary = "📚 YouTube Digest\n\n"
+        summary += "**📑 Articles:**\n"
+        for i, article in enumerate(articles, 1):
+            summary += f"{i}. {article['title'][:50]}" + ("..." if len(article['title']) > 50 else "") + "\n"
+        
+        # Add ebook information
+        summary += "\n**📱 Ebook Files:**\n"
+        summary += f"- EPUB: {os.path.basename(epub_path)}\n"
+        summary += f"- PDF: {os.path.basename(pdf_path)}\n"
+        summary += "\n*Ebooks are attached to the email.*"
+        
+        # Prepare data for PushPlus API
+        data = {
+            "token": PUSHPLUS_TOKEN,
+            "title": f"📚 YouTube Digest - {datetime.now().strftime('%B %d, %Y')}",
+            "content": summary,
+            "template": "html"
+        }
+        
+        # Send request
+        response = requests.post(
+            "http://www.pushplus.plus/send",
+            json=data,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("code") == 200:
+                print("  ✓ Pushed to WeChat successfully")
+                return True
+            else:
+                print(f"  ✗ PushPlus error: {result.get('msg', 'Unknown error')}")
+                return False
+        else:
+            print(f"  ✗ HTTP error: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"  ✗ Failed to push to WeChat: {e}")
+        return False
+
+
+def create_pdf(articles):
+    """
+    Create a PDF ebook from the articles for reading on any device.
+    Returns the path to the generated PDF file.
+    """
+    today = datetime.now().strftime("%B %d, %Y")
+    filename = f"youtube_digest_{datetime.now().strftime('%Y%m%d')}.pdf"
+    filepath = os.path.join(os.path.dirname(__file__), filename)
+
+    # Create PDF document
+    doc = SimpleDocTemplate(
+        filepath,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=18
+    )
+
+    # Register Chinese fonts for macOS
+    try:
+        # Try to register PingFang SC (macOS default Chinese font)
+        pdfmetrics.registerFont(TTFont('PingFangSC', '/System/Library/Fonts/PingFang.ttc', subfontIndex=1))
+        chinese_font = 'PingFangSC'
+        print("  ✓ Using PingFang SC font for Chinese text")
+    except:
+        try:
+            # Fallback to STHeiti
+            pdfmetrics.registerFont(TTFont('STHeiti', '/System/Library/Fonts/STHeiti Light.ttc', subfontIndex=0))
+            chinese_font = 'STHeiti'
+            print("  ✓ Using STHeiti font for Chinese text")
+        except:
+            # If both fail, use Helvetica (Chinese won't display properly)
+            chinese_font = 'Helvetica'
+            print("  ⚠ Warning: Chinese font not found, Chinese text may not display properly")
+
+    # Create styles
+    styles = getSampleStyleSheet()
+    
+    # Custom styles for better formatting
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.darkblue,
+        spaceAfter=30,
+        alignment=TA_CENTER,
+        fontName=chinese_font
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.darkblue,
+        spaceAfter=12,
+        spaceBefore=20,
+        fontName=chinese_font
+    )
+    
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['BodyText'],
+        fontSize=11,
+        spaceAfter=12,
+        leading=16,
+        fontName=chinese_font
+    )
+    
+    intro_style = ParagraphStyle(
+        'CustomIntro',
+        parent=styles['BodyText'],
+        fontSize=10,
+        textColor=colors.gray,
+        spaceAfter=20,
+        leading=14,
+        fontName=chinese_font,
+        leftIndent=20,
+        rightIndent=20
+    )
+    
+    link_style = ParagraphStyle(
+        'CustomLink',
+        parent=styles['BodyText'],
+        fontSize=10,
+        textColor=colors.blue,
+        spaceAfter=30,
+        fontName=chinese_font
+    )
+
+    # Build the story (content)
+    story = []
+
+    # Add title page
+    story.append(Spacer(1, 2*inch))
+    story.append(Paragraph("YOUR YOUTUBE DIGEST", title_style))
+    story.append(Paragraph(today, ParagraphStyle(
+        'DateStyle',
+        parent=styles['Normal'],
+        fontSize=14,
+        alignment=TA_CENTER,
+        spaceAfter=30,
+        fontName=chinese_font
+    )))
+    story.append(PageBreak())
+
+    # Add each article
+    for i, article in enumerate(articles):
+        # Convert markdown article to HTML, then to paragraphs
+        article_html = markdown.markdown(article['article'])
+        
+        # Add article intro
+        story.append(Paragraph(
+            f"This article is based on the video <b>{article['title']}</b> from the YouTube channel <b>{article['channel']}</b>.",
+            intro_style
+        ))
+        
+        # Parse and add article content
+        lines = article_html.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Remove HTML tags and convert to reportlab format
+            if line.startswith('<h1>'):
+                text = line.replace('<h1>', '').replace('</h1>', '')
+                story.append(Paragraph(text, title_style))
+            elif line.startswith('<h2>'):
+                text = line.replace('<h2>', '').replace('</h2>', '')
+                story.append(Paragraph(text, heading_style))
+            elif line.startswith('<h3>'):
+                text = line.replace('<h3>', '').replace('</h3>', '')
+                story.append(Paragraph(text, heading_style))
+            elif line.startswith('<p>'):
+                text = line.replace('<p>', '').replace('</p>', '')
+                # Convert markdown bold and italic to reportlab format
+                text = text.replace('<strong>', '<b>').replace('</strong>', '</b>')
+                text = text.replace('<em>', '<i>').replace('</em>', '</i>')
+                text = text.replace('**', '<b>').replace('*', '<i>')
+                story.append(Paragraph(text, body_style))
+            elif line.startswith('<ul>') or line.startswith('</ul>') or line.startswith('<li>') or line.startswith('</li>'):
+                continue  # Skip list tags for simplicity
+            else:
+                # Try to add as paragraph
+                text = line.replace('<strong>', '<b>').replace('</strong>', '</b>')
+                text = text.replace('<em>', '<i>').replace('</em>', '</i>')
+                text = text.replace('**', '<b>').replace('*', '<i>')
+                story.append(Paragraph(text, body_style))
+        
+        # Add video link
+        story.append(Paragraph(f"Watch the original video: {article['url']}", link_style))
+        
+        # Add page break between articles (except for the last one)
+        if i < len(articles) - 1:
+            story.append(PageBreak())
+
+    # Build the PDF
+    doc.build(story)
+
+    print(f"  ✓ Created PDF: {filename}")
+    return filepath
+
+
 def create_newsletter_html(articles):
     """
     Create a beautifully formatted HTML newsletter from the articles.
@@ -238,7 +465,8 @@ def create_newsletter_html(articles):
             <p>{today}</p>
         </div>
         <div class="epub-note">
-            📚 EPUB ebook attached - open on your phone's ebook reader!
+            📚 EPUB ebook attached - open on your phone's ebook reader!<br>
+            📄 PDF ebook attached - open on any device!
         </div>
     """
 
@@ -310,7 +538,7 @@ def save_newsletter_archive(html_content, epub_path, articles):
 
 def send_newsletter(articles, recipient_email=None):
     """
-    Send the newsletter via Gmail with EPUB attachment.
+    Send the newsletter via Gmail with EPUB and PDF attachments.
     If no recipient specified, sends to yourself.
     """
     if not articles:
@@ -326,6 +554,14 @@ def send_newsletter(articles, recipient_email=None):
     # Create EPUB ebook
     print("  Creating EPUB ebook...")
     epub_path = create_epub(articles)
+    
+    # Create PDF ebook
+    print("  Creating PDF ebook...")
+    pdf_path = create_pdf(articles)
+
+    # Push to WeChat
+    print("  Pushing to WeChat...")
+    #push_to_wechat(epub_path, pdf_path, articles)
 
     # Create the email (mixed type for attachments)
     msg = MIMEMultipart("mixed")
@@ -341,7 +577,7 @@ def send_newsletter(articles, recipient_email=None):
 
     # Create plain text version (simple fallback)
     text_content = "Your YouTube Newsletter\n\n"
-    text_content += "📚 EPUB ebook attached - open on your phone's ebook reader!\n\n"
+    text_content += "📚 EPUB and PDF ebooks attached - open on your phone's ebook reader!\n\n"
     for article in articles:
         text_content += f"--- {article['channel']} ---\n"
         text_content += f"{article['article']}\n"
@@ -357,29 +593,53 @@ def send_newsletter(articles, recipient_email=None):
     # Attach EPUB file
     print("  Attaching EPUB file...")
     with open(epub_path, "rb") as attachment:
-        part = MIMEBase("application", "epub+zip")
-        part.set_payload(attachment.read())
-        encoders.encode_base64(part)
-        part.add_header(
+        epub_part = MIMEBase("application", "epub+zip")
+        epub_part.set_payload(attachment.read())
+        encoders.encode_base64(epub_part)
+        epub_part.add_header(
             "Content-Disposition",
             f"attachment; filename={os.path.basename(epub_path)}"
         )
-        msg.attach(part)
+        msg.attach(epub_part)
+    
+    # Attach PDF file
+    print("  Attaching PDF file...")
+    with open(pdf_path, "rb") as attachment:
+        pdf_part = MIMEBase("application", "pdf")
+        pdf_part.set_payload(attachment.read())
+        encoders.encode_base64(pdf_part)
+        pdf_part.add_header(
+            "Content-Disposition",
+            f"attachment; filename={os.path.basename(pdf_path)}"
+        )
+        msg.attach(pdf_part)
 
     try:
-        # Connect to Gmail and send
+        # Connect to SMTP server and send
         print("  Sending email...")
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        
+        # Detect if using QQ email
+        if "qq.com" in GMAIL_ADDRESS:
+            # Use QQ SMTP server
+            smtp_server = "smtp.qq.com"
+            smtp_port = 465
+        else:
+            # Use Gmail SMTP server
+            smtp_server = "smtp.gmail.com"
+            smtp_port = 465
+        
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
             server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_ADDRESS, recipient_email, msg.as_string())
 
-        print("✓ Newsletter sent successfully with EPUB attachment!")
+        print("✓ Newsletter sent successfully with EPUB and PDF attachments!")
 
         # Save to archive before cleaning up
         save_newsletter_archive(html_content, epub_path, articles)
 
-        # Clean up EPUB file
+        # Clean up temporary files
         os.remove(epub_path)
+        os.remove(pdf_path)
 
         return True
 

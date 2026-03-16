@@ -19,7 +19,7 @@ def write_article(video):
     """
     Use Claude to transform a video transcript into a magazine-style article.
     """
-    prompt = f"""You are a skilled magazine writer. Transform this YouTube video transcript into a well-written, engaging article.
+    prompt = f"""You are a skilled magazine writer. Transform this YouTube video transcript into a well-written, engaging article in BOTH English and Chinese.
 
 VIDEO TITLE: {video['title']}
 CHANNEL: {video['channel']}
@@ -33,16 +33,31 @@ TRANSCRIPT:
 
 ---
 
-Remix this YouTube transcript into a magazine article. Guidelines:
+Remix this YouTube transcript into a magazine article in BOTH English and Chinese. Guidelines:
+- Write in alternating paragraphs: one paragraph in English, followed by its Chinese translation, then the next English paragraph, and so on.
 - Use the video title and description to correct any transcription errors, especially names of people, companies, or technical terms. The description often contains the correct spellings.
-- Start with an engaging headline (different from the video title)
+- Start with an engaging headline (different from the video title) in both English and Chinese
 - The audience is a curious individual who is generally smart but not a specialist or expert in the area mentioned in the video
 - Highly engaging and readable. Wherever jargon or obscure references appear, explain them. Extremely well-written; think New Yorker or the Atlantic
 - Capture the key insights, especially contrarian viewpoints, memorable anecdotes, and surprising insights. Preserve key quotes (clean up filler words or transcription errors).
 - There's no fixed length requirement; it depends on the length of the original article as well as the insight density. Make your own judgment. This should be a satisfying long-read.
 - Do NOT include phrases like "In this video" - write it as a standalone article. Assume the reader has not watched the video and has zero context about it. This article is meant to be as a replacement, not complement, for watching the video.
+- The Chinese translation MUST be in Simplified Chinese (简体中文), not Traditional Chinese (繁体字).
+- The Chinese translation should be natural, fluent, and maintain the same engaging style as the English version.
 
-Format the article in clean markdown."""
+Format the article in clean markdown.
+
+Example format:
+# English Headline / 中文标题
+
+First paragraph in English.
+
+第一段中文翻译。
+
+Second paragraph in English.
+
+第二段中文翻译。
+"""
 
     try:
         message = client.messages.create(
