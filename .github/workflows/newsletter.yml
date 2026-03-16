@@ -1,10 +1,10 @@
-name: Weekly YouTube Newsletter
+name: Daily YouTube Newsletter
 
-# Run every Wednesday at 7:00 AM PST (3:00 PM UTC)
+# Run every day at 7:00 AM PST (3:00 PM UTC)
 # PST is UTC-8, so 7 AM PST = 15:00 UTC
 on:
   schedule:
-    - cron: '0 15 * * 3'  # 3 = Wednesday, 15:00 UTC = 7 AM PST
+    - cron: '0 8 * * *'  # * = every day, 15:00 UTC = 7 AM PST
 
   # Also allow manual trigger from GitHub website
   workflow_dispatch:
