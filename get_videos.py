@@ -11,13 +11,29 @@ from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
 # Load your secret API key from the .env file
-proxy_info = httplib2.ProxyInfo(
-    proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
-    proxy_host='127.0.0.1',
-    proxy_port=15236,
-)
 load_dotenv()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+
+# Get proxy settings from environment variables
+http_proxy = os.getenv("HTTP_PROXY")
+proxy_info = None
+
+if http_proxy:
+    # Parse proxy URL to get host and port
+    import urllib.parse
+    parsed = urllib.parse.urlparse(http_proxy)
+    if parsed.hostname and parsed.port:
+        try:
+            # Try to use socks module if available
+            proxy_info = httplib2.ProxyInfo(
+                proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
+                proxy_host=parsed.hostname,
+                proxy_port=parsed.port,
+            )
+        except AttributeError:
+            # If socks module is not available, skip proxy
+            print("Warning: Proxy configuration failed - socks module not available")
+            proxy_info = None
 
 # ========================================
 # YOUR FAVORITE CHANNELS GO HERE
@@ -126,7 +142,10 @@ def main():
     Main function - this runs when you execute the script.
     """
     # Create a connection to YouTube
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    if proxy_info:
+        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, http=httplib2.Http(proxy_info=proxy_info))
+    else:
+        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
 
     print("Fetching latest LONG-FORM videos (skipping Shorts)...\n")
     print("=" * 60)
