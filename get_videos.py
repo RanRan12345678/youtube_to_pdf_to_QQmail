@@ -149,9 +149,9 @@ def main():
     """
     # Create a connection to YouTube
     if proxy_info:
-        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, http=httplib2.Http(proxy_info=proxy_info))
+        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, http=httplib2.Http(proxy_info=proxy_info), credentials=None)
     else:
-        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, credentials=None)
 
     print("Fetching latest LONG-FORM videos (skipping Shorts)...\n")
     print("=" * 60)
