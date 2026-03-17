@@ -14,32 +14,32 @@ from dotenv import load_dotenv
 load_dotenv()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 
-# Get proxy settings from environment variables
-http_proxy = os.getenv("HTTP_PROXY")
-proxy_info = None
+# Get proxy settings from environment variables (not used with default http object)
+# http_proxy = os.getenv("HTTP_PROXY")
+# proxy_info = None
 
-if http_proxy:
-    # Parse proxy URL to get host and port
-    import urllib.parse
-    parsed = urllib.parse.urlparse(http_proxy)
-    if parsed.hostname and parsed.port:
-        try:
-            # Check if httplib2.socks is available
-            if hasattr(httplib2, 'socks') and httplib2.socks is not None:
-                # Try to use socks module if available
-                proxy_info = httplib2.ProxyInfo(
-                    proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
-                    proxy_host=parsed.hostname,
-                    proxy_port=parsed.port,
-                )
-            else:
-                # If socks module is not available, skip proxy
-                print("Warning: Proxy configuration failed - socks module not available")
-                proxy_info = None
-        except AttributeError:
-            # If socks module is not available, skip proxy
-            print("Warning: Proxy configuration failed - socks module not available")
-            proxy_info = None
+#if http_proxy:
+#    # Parse proxy URL to get host and port
+#    import urllib.parse
+#    parsed = urllib.parse.urlparse(http_proxy)
+#    if parsed.hostname and parsed.port:
+#        try:
+#            # Check if httplib2.socks is available
+#            if hasattr(httplib2, 'socks') and httplib2.socks is not None:
+#                # Try to use socks module if available
+#                proxy_info = httplib2.ProxyInfo(
+#                    proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
+#                    proxy_host=parsed.hostname,
+#                    proxy_port=parsed.port,
+#                )
+#            else:
+#                # If socks module is not available, skip proxy
+#                print("Warning: Proxy configuration failed - socks module not available")
+#                proxy_info = None
+#        except AttributeError:
+#            # If socks module is not available, skip proxy
+#            print("Warning: Proxy configuration failed - socks module not available")
+#            proxy_info = None
 
 # ========================================
 # YOUR FAVORITE CHANNELS GO HERE
@@ -148,20 +148,13 @@ def main():
     Main function - this runs when you execute the script.
     """
     # Create a connection to YouTube
-    # Use a custom http object to avoid default credential lookup
+    # Use the default http object to ensure API key is properly applied
     # This ensures we only use the API key for authentication
-    
-    # Create HTTP object with optional proxy
-    if proxy_info:
-        http = httplib2.Http(proxy_info=proxy_info)
-    else:
-        http = httplib2.Http()
     
     # Create the YouTube service with API key
     youtube = build(
         "youtube", "v3", 
-        developerKey=YOUTUBE_API_KEY, 
-        http=http
+        developerKey=YOUTUBE_API_KEY
     )
 
     print("Fetching latest LONG-FORM videos (skipping Shorts)...\n")
