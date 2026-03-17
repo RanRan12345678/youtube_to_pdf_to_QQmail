@@ -8,6 +8,7 @@ import os
 import requests
 import httplib2
 from googleapiclient.discovery import build
+from googleapiclient.http import Http
 from dotenv import load_dotenv
 
 # Load your secret API key from the .env file
@@ -148,10 +149,31 @@ def main():
     Main function - this runs when you execute the script.
     """
     # Create a connection to YouTube
+    # Use a custom http object and avoid default credential lookup
+    # This ensures we only use the API key for authentication
+    import google.auth
+    
+    # Create a dummy credentials object that doesn't require authentication
+    class DummyCredentials:
+        def apply(self, headers):
+            pass
+        
+        def before_request(self, request, method, url, body):
+            pass
+    
+    # Create HTTP object with optional proxy
     if proxy_info:
-        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, http=httplib2.Http(proxy_info=proxy_info), credentials=None)
+        http = httplib2.Http(proxy_info=proxy_info)
     else:
-        youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, credentials=None)
+        http = httplib2.Http()
+    
+    # Create the YouTube service with API key and dummy credentials
+    youtube = build(
+        "youtube", "v3", 
+        developerKey=YOUTUBE_API_KEY, 
+        http=http,
+        credentials=DummyCredentials()
+    )
 
     print("Fetching latest LONG-FORM videos (skipping Shorts)...\n")
     print("=" * 60)
