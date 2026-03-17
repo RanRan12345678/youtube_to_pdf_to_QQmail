@@ -148,17 +148,8 @@ def main():
     Main function - this runs when you execute the script.
     """
     # Create a connection to YouTube
-    # Use a custom http object and avoid default credential lookup
+    # Use a custom http object to avoid default credential lookup
     # This ensures we only use the API key for authentication
-    import google.auth
-    
-    # Create a dummy credentials object that doesn't require authentication
-    class DummyCredentials:
-        def apply(self, headers):
-            pass
-        
-        def before_request(self, request, method, url, body):
-            pass
     
     # Create HTTP object with optional proxy
     if proxy_info:
@@ -166,12 +157,11 @@ def main():
     else:
         http = httplib2.Http()
     
-    # Create the YouTube service with API key and dummy credentials
+    # Create the YouTube service with API key
     youtube = build(
         "youtube", "v3", 
         developerKey=YOUTUBE_API_KEY, 
-        http=http,
-        credentials=DummyCredentials()
+        http=http
     )
 
     print("Fetching latest LONG-FORM videos (skipping Shorts)...\n")
