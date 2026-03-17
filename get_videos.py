@@ -8,7 +8,6 @@ import os
 import requests
 import httplib2
 from googleapiclient.discovery import build
-from googleapiclient.http import Http
 from dotenv import load_dotenv
 
 # Load your secret API key from the .env file
