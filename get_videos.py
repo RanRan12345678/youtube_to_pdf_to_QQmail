@@ -24,12 +24,18 @@ if http_proxy:
     parsed = urllib.parse.urlparse(http_proxy)
     if parsed.hostname and parsed.port:
         try:
-            # Try to use socks module if available
-            proxy_info = httplib2.ProxyInfo(
-                proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
-                proxy_host=parsed.hostname,
-                proxy_port=parsed.port,
-            )
+            # Check if httplib2.socks is available
+            if hasattr(httplib2, 'socks') and httplib2.socks is not None:
+                # Try to use socks module if available
+                proxy_info = httplib2.ProxyInfo(
+                    proxy_type=httplib2.socks.PROXY_TYPE_HTTP,
+                    proxy_host=parsed.hostname,
+                    proxy_port=parsed.port,
+                )
+            else:
+                # If socks module is not available, skip proxy
+                print("Warning: Proxy configuration failed - socks module not available")
+                proxy_info = None
         except AttributeError:
             # If socks module is not available, skip proxy
             print("Warning: Proxy configuration failed - socks module not available")
