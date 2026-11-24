@@ -4,15 +4,59 @@ Takes raw video transcripts and turns them into polished, readable articles.
 """
 
 import os
+
 import anthropic
+import httpx
 from dotenv import load_dotenv
 
-# Load your API key
+# Load config from .env
 load_dotenv()
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_AUTH_TOKEN = os.getenv("ANTHROPIC_AUTH_TOKEN")
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
-# Create the Claude client
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+# MiniMax 是国内服务，trust_env=False 强制直连（与验证通过的 curl 路径一致），不依赖代理状态
+client = anthropic.Anthropic(
+    auth_token=ANTHROPIC_AUTH_TOKEN,
+    base_url=ANTHROPIC_BASE_URL,
+    http_client=httpx.Client(trust_env=False, timeout=120.0),
+)
+
+
+MAX_CONTINUATIONS = 3
+
+
+def _extract_text(message):
+    return [
+        block.text
+        for block in message.content
+        if getattr(block, "type", None) == "text" and getattr(block, "text", None)
+    ]
+
+
+def _create_with_continuation(prompt):
+    messages = [{"role": "user", "content": prompt}]
+    full_text_parts = []
+
+    for _ in range(MAX_CONTINUATIONS + 1):
+        message = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=16000,
+            messages=messages,
+        )
+
+        full_text_parts.extend(_extract_text(message))
+
+        if getattr(message, "stop_reason", None) != "max_tokens":
+            return "\n".join(full_text_parts)
+
+        print(f"  ↻ Output hit max_tokens, continuing... ({sum(len(p) for p in full_text_parts)} chars so far)")
+        messages = messages + [
+            {"role": "assistant", "content": message.content},
+            {"role": "user", "content": "Continue the article exactly where it stopped. Do not repeat previous text and do not add any commentary. Continue seamlessly."},
+        ]
+
+    return "\n".join(full_text_parts)
 
 
 def write_article(video):
@@ -60,18 +104,19 @@ Second paragraph in English.
 """
 
     try:
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=8000,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        article = _create_with_continuation(prompt)
 
-        return message.content[0].text
+        if not article:
+            print("  ⚠ Model returned no text content")
+            return None
+
+        return article
 
     except Exception as e:
-        print(f"  ⚠ Error generating article: {e}")
+        print(f"  ⚠ Error generating article: {type(e).__name__}: {e}")
+        cause = e.__cause__ or e.__context__
+        if cause:
+            print(f"    caused by: {type(cause).__name__}: {cause}")
         return None
 
 

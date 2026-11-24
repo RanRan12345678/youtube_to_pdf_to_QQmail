@@ -1,3 +1,7 @@
-@mkbhd
-@veritasium
-@3blue1brown
+@ycombinator
+@xiao_lin_shuo
+@mreflow
+@bbclearningenglish
+@LatentSpacePod
+@马克的技术工作坊
+@jlawstock

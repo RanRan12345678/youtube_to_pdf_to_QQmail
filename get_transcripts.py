@@ -4,6 +4,7 @@ This script uses the Supadata API to fetch transcripts reliably.
 Unlike the youtube-transcript-api library, Supadata doesn't get blocked by YouTube.
 """
 
+import json
 import os
 import time
 import requests
@@ -15,6 +16,23 @@ SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
 
 # Supadata API endpoint for transcripts (works for YouTube, TikTok, Instagram, etc.)
 SUPADATA_TRANSCRIPT_URL = "https://api.supadata.ai/v1/transcript"
+
+# Local cache so re-runs don't burn Supadata API quota
+CACHE_FILE = os.path.join(os.path.dirname(__file__), "transcripts_cache.json")
+
+
+def _load_cache():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_to_cache(video_id, text):
+    cache = _load_cache()
+    cache[video_id] = text
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
 def get_transcript(video_id):
@@ -32,6 +50,12 @@ def get_transcript(video_id):
     if not SUPADATA_API_KEY or SUPADATA_API_KEY == "your_supadata_api_key_here":
         print("  ⚠ SUPADATA_API_KEY not set in .env file")
         return None
+
+    # Check local cache first - no API call needed on cache hit
+    cache = _load_cache()
+    if video_id in cache and cache[video_id]:
+        print("  ✓ Loaded transcript from local cache")
+        return cache[video_id]
 
     try:
         # Build the YouTube URL from the video ID
@@ -58,13 +82,17 @@ def get_transcript(video_id):
             # The API returns content in the 'content' field when using text=true
             # Or 'transcript' field with segments when not using text=true
             if "content" in data and data["content"]:
-                return data["content"].strip()
+                text = data["content"].strip()
+                _save_to_cache(video_id, text)
+                return text
             elif "transcript" in data:
                 # If we got segments, combine them into full text
                 segments = data["transcript"]
                 if segments:
                     full_text = " ".join(seg.get("text", "") for seg in segments)
-                    return full_text.strip()
+                    full_text = full_text.strip()
+                    _save_to_cache(video_id, full_text)
+                    return full_text
 
             print(f"  ⚠ No transcript content in response")
             return None
