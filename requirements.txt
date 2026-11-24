@@ -2,6 +2,7 @@ google-api-python-client
 python-dotenv
 youtube-transcript-api
 anthropic
+httpx
 markdown
 ebooklib
 reportlab
