@@ -6,6 +6,10 @@ FORZARA.md
 SHARE_ON_X.md
 
 # Generated files
+videos_state.json
+transcripts_cache.json
+articles/
+articles_pending.json
 processed_videos.json
 *.epub
 logs/

@@ -225,9 +225,15 @@ def create_pdf(articles):
             chinese_font = 'STHeiti'
             print("  ✓ Using STHeiti font for Chinese text")
         except:
-            # If both fail, use Helvetica (Chinese won't display properly)
-            chinese_font = 'Helvetica'
-            print("  ⚠ Warning: Chinese font not found, Chinese text may not display properly")
+            try:
+                # Fallback to Noto Sans CJK (Linux / GitHub Actions runner)
+                pdfmetrics.registerFont(TTFont('NotoSansCJK', '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', subfontIndex=0))
+                chinese_font = 'NotoSansCJK'
+                print("  ✓ Using Noto Sans CJK font for Chinese text")
+            except:
+                # If all fail, use Helvetica (Chinese won't display properly)
+                chinese_font = 'Helvetica'
+                print("  ⚠ Warning: Chinese font not found, Chinese text may not display properly")
 
     # Create styles
     styles = getSampleStyleSheet()

@@ -1,92 +1,115 @@
 """
-Video Tracker: Keeps track of which videos have already been processed.
-This prevents sending duplicate articles for the same video.
+Video Tracker: per-video state machine with resumable pipeline.
+States: discovered → transcripted → article_written → sent.
+A run picks up every non-sent video and resumes it from its current step,
+relying on cached transcripts and cached articles (articles/<id>.json)
+instead of re-calling paid APIs.
 """
 
-import os
 import json
+import os
 from datetime import datetime
 
-# File to store processed video IDs
-TRACKER_FILE = os.path.join(os.path.dirname(__file__), "processed_videos.json")
+STATE_FILE = os.path.join(os.path.dirname(__file__), "videos_state.json")
+ARTICLES_DIR = os.path.join(os.path.dirname(__file__), "articles")
+
+STATUS_DISCOVERED = "discovered"
+STATUS_TRANSCRIPTED = "transcripted"
+STATUS_ARTICLE_WRITTEN = "article_written"
+STATUS_SENT = "sent"
 
 
-def load_processed_videos():
-    """
-    Load the list of already-processed video IDs from file.
-    """
-    if os.path.exists(TRACKER_FILE):
-        with open(TRACKER_FILE, "r") as f:
+def load_state():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {"videos": {}}
 
 
-def save_processed_videos(data):
-    """
-    Save the processed videos list to file.
-    """
-    with open(TRACKER_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def save_state(data):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def is_video_processed(video_id):
-    """
-    Check if a video has already been processed.
-    """
-    data = load_processed_videos()
-    return video_id in data["videos"]
+def _update(video_id, **fields):
+    data = load_state()
+    info = data["videos"].setdefault(video_id, {})
+    info.update(fields)
+    info["updated_at"] = datetime.now().isoformat()
+    save_state(data)
+    return info
 
 
-def mark_video_processed(video_id, title, channel):
-    """
-    Mark a video as processed so we don't send it again.
-    """
-    data = load_processed_videos()
-    data["videos"][video_id] = {
-        "title": title,
-        "channel": channel,
-        "processed_at": datetime.now().isoformat()
-    }
-    save_processed_videos(data)
+def get_status(video_id):
+    info = load_state()["videos"].get(video_id)
+    return info.get("status") if info else None
 
 
-def filter_new_videos(videos):
-    """
-    Filter out videos that have already been processed.
-    Returns only new videos.
-    """
-    new_videos = []
+def set_status(video_id, status, title="", channel="", url=""):
+    return _update(video_id, status=status, title=title, channel=channel, url=url)
 
+
+def sync_videos(videos):
+    """
+    Register unseen videos as 'discovered'.
+    Returns every video that is not 'sent' yet — the resumable workset.
+    """
+    data = load_state()
+    pending = []
     for video in videos:
-        if is_video_processed(video["video_id"]):
-            print(f"  ⏭ Skipping (already processed): {video['title'][:50]}...")
+        vid = video["video_id"]
+        info = data["videos"].get(vid)
+        if info is None:
+            data["videos"][vid] = {
+                "title": video["title"],
+                "channel": video["channel"],
+                "url": video["url"],
+                "status": STATUS_DISCOVERED,
+                "updated_at": datetime.now().isoformat(),
+            }
+            pending.append(video)
+            print(f"  🆕 New video discovered: {video['title'][:50]}...")
+        elif info.get("status") != STATUS_SENT:
+            pending.append(video)
         else:
-            new_videos.append(video)
-
-    return new_videos
-
-
-def mark_videos_processed(videos):
-    """
-    Mark multiple videos as processed after successfully sending newsletter.
-    """
-    for video in videos:
-        mark_video_processed(video["video_id"], video["title"], video["channel"])
+            print(f"  ⏭ Skipping (sent): {video['title'][:50]}...")
+    save_state(data)
+    return pending
 
 
-def get_processed_count():
-    """
-    Get the total number of videos we've processed.
-    """
-    data = load_processed_videos()
-    return len(data["videos"])
+def article_path(video_id):
+    return os.path.join(ARTICLES_DIR, f"{video_id}.json")
 
 
-# Utility to view/manage processed videos
+def load_article(video_id):
+    if os.path.exists(article_path(video_id)):
+        with open(article_path(video_id), "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+
+def save_article(video_id, data):
+    os.makedirs(ARTICLES_DIR, exist_ok=True)
+    with open(article_path(video_id), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def mark_sent(video_ids):
+    for vid in video_ids:
+        _update(vid, status=STATUS_SENT)
+
+
+def summary():
+    counts = {}
+    for info in load_state()["videos"].values():
+        s = info.get("status", "unknown")
+        counts[s] = counts.get(s, 0) + 1
+    return counts
+
+
+# Utility to view current state
 if __name__ == "__main__":
-    data = load_processed_videos()
-    print(f"Total processed videos: {len(data['videos'])}\n")
-
+    data = load_state()
+    print(f"Total tracked videos: {len(data['videos'])}\n")
     for video_id, info in data["videos"].items():
-        print(f"• {info['channel']}: {info['title'][:50]}")
-        print(f"  Processed: {info['processed_at']}\n")
+        print(f"• [{info.get('status')}] {info.get('channel')}: {info.get('title', '')[:50]}")

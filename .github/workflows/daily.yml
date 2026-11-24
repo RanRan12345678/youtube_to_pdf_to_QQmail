@@ -39,6 +39,7 @@ jobs:
           path: |
             transcripts_cache.json
             processed_videos.json
+            articles_pending.json
           # key 用 repo 名 + 固定前缀；restore-keys 让缓存能被旧版本命中
           key: newsletter-cache-${{ runner.os }}
           restore-keys: |
@@ -64,15 +65,17 @@ jobs:
           ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
           ANTHROPIC_MODEL=MiniMax-M3
 
-          # QQ 邮箱
-          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
-          EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_TO=${{ secrets.EMAIL_TO }}
+          # QQ 邮箱（变量名必须与 send_email.py 中 os.getenv 一致）
+          GMAIL_ADDRESS=${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}
 
           # PushPlus (可选)
           PUSHPLUS_TOKEN=${{ secrets.PUSHPLUS_TOKEN }}
           ENVEOF
 
+      - name: Install Chinese fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+        
       - name: Run newsletter pipeline
         run: |
           echo "=== Run start $(date -u) ==="
@@ -93,5 +96,6 @@ jobs:
       # 成功后更新缓存（cache action 自动处理，这里显式提示）
       - name: Verify cache state
         run: |
-          echo "transcripts_cache.json size: $(wc -c < transcripts_cache.json 2>/dev/null || echo 0) bytes"
-          echo "processed_videos.json size: $(wc -c < processed_videos.json 2>/dev/null || echo 0) bytes"
+          echo "videos_state.json: $(wc -c < videos_state.json 2>/dev/null || echo 0) bytes"
+          echo "transcripts_cache.json: $(wc -c < transcripts_cache.json 2>/dev/null || echo 0) bytes"
+          echo "articles saved: $(ls articles/ 2>/dev/null | wc -l)"
