@@ -1,0 +1,97 @@
+name: Daily Newsletter Pipeline
+
+on:
+  schedule:
+    # 每天早上 7:00 (Asia/Shanghai = UTC+8)
+    - cron: "0 23 * * *"
+  workflow_dispatch:  # 也支持手动触发（Actions 面板里点 Run workflow）
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # 默认代理留空（海外 runner 直连）。如果你以后买了自建 VPS 代理，
+      # 在 GitHub Secrets 加 PROXY_URL 变量，这里会自动生效。
+      HTTP_PROXY: ${{ secrets.PROXY_URL || '' }}
+      HTTPS_PROXY: ${{ secrets.PROXY_URL || '' }}
+      NO_PROXY: api.minimaxi.com,www.pushplus.plus,localhost,127.0.0.1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ---- 持久化缓存：字幕 + 已处理视频列表 ----
+      # 跨次运行复用，避免每天重烧 Supadata 额度 / MiniMax token
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            transcripts_cache.json
+            processed_videos.json
+          # key 用 repo 名 + 固定前缀；restore-keys 让缓存能被旧版本命中
+          key: newsletter-cache-${{ runner.os }}
+          restore-keys: |
+            newsletter-cache-
+
+      # ---- 运行时拼 .env（不进 git，完全从 Secrets 注入） ----
+      - name: Create .env from Secrets
+        run: |
+          cat > .env << 'ENVEOF'
+          # Proxy
+          HTTP_PROXY=${HTTP_PROXY}
+          HTTPS_PROXY=${HTTPS_PROXY}
+          NO_PROXY=${NO_PROXY}
+
+          # YouTube
+          YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+
+          # Supadata
+          SUPADATA_API_KEY=${{ secrets.SUPADATA_API_KEY }}
+
+          # MiniMax (Anthropic 兼容)
+          ANTHROPIC_AUTH_TOKEN=${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+          ANTHROPIC_MODEL=MiniMax-M3
+
+          # QQ 邮箱
+          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+          EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO=${{ secrets.EMAIL_TO }}
+
+          # PushPlus (可选)
+          PUSHPLUS_TOKEN=${{ secrets.PUSHPLUS_TOKEN }}
+          ENVEOF
+
+      - name: Run newsletter pipeline
+        run: |
+          echo "=== Run start $(date -u) ==="
+          python main.py
+          EXIT_CODE=$?
+          echo "=== Run end $(date -u), exit=$EXIT_CODE ==="
+          exit $EXIT_CODE
+
+      # 失败时也上传日志，方便在 Actions 面板里排查
+      - name: Upload logs (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_id }}
+          path: logs/
+          if-no-files-found: ignore
+
+      # 成功后更新缓存（cache action 自动处理，这里显式提示）
+      - name: Verify cache state
+        run: |
+          echo "transcripts_cache.json size: $(wc -c < transcripts_cache.json 2>/dev/null || echo 0) bytes"
+          echo "processed_videos.json size: $(wc -c < processed_videos.json 2>/dev/null || echo 0) bytes"
