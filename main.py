@@ -55,14 +55,17 @@ def run():
         print("No articles generated.")
         return
 
+    # Step 3b: Mark as processed AFTER article generation succeeds
+    # (so we don't re-burn MiniMax token on reruns even if email fails)
+    mark_videos_processed(videos_with_transcripts)
+    print(f"\n  ✓ Marked {len(videos_with_transcripts)} video(s) as processed after article generation")
+
     # Step 4: Send the newsletter via email
     print("\n📧 STEP 4: Sending newsletter...\n")
     success = send_newsletter(articles)
 
-    # Step 5: Mark videos as processed (only if email sent successfully)
-    if success:
-        mark_videos_processed(videos_with_transcripts)
-        print(f"\n  ✓ Marked {len(videos_with_transcripts)} video(s) as processed")
+    if not success:
+        print("\n  ⚠ Email failed — but articles were saved, run again later to retry delivery")
 
     print("\n" + "=" * 60)
     print("  DONE!")
