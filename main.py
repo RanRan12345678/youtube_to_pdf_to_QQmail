@@ -7,7 +7,7 @@ A failed step resumes from that step on the next run, relying on cached data.
 
 from get_videos import main as fetch_videos
 from get_transcripts import get_transcript
-from write_articles import write_article
+from write_articles import write_article, summarize_article
 from send_email import send_newsletter
 import video_tracker as tracker
 
@@ -51,23 +51,32 @@ def run():
                            title=video["title"], channel=video["channel"], url=video["url"])
         video["transcript"] = transcript
 
-        # Step 3: Write article (cached on disk; AI only called when missing)
+        # Step 3: Write article + summary (cached on disk; AI only called when missing)
         cached = tracker.load_article(vid)
-        if cached:
-            article = cached["article"]
+        article = cached.get("article") if cached else None
+        summary = cached.get("summary") if cached else None
+
+        if article:
             print("  ✓ Article loaded from local cache")
         else:
             article = write_article(video)
             if not article:
                 print("  ✗ Article generation failed, will retry next run")
                 continue
-            tracker.save_article(vid, {"title": video["title"], "channel": video["channel"],
-                                       "url": video["url"], "article": article})
-            print("  ✓ Article generated and saved")
+            print("  ✓ Article generated")
+
+        if not summary:
+            summary = summarize_article(article) or ""
+            print("  ✓ Summary generated" if summary else "  ⚠ Summary failed, will fallback to excerpt")
+        else:
+            print("  ✓ Summary loaded from cache")
+
+        tracker.save_article(vid, {"title": video["title"], "channel": video["channel"],
+                                   "url": video["url"], "article": article, "summary": summary})
         tracker.set_status(vid, tracker.STATUS_ARTICLE_WRITTEN,
                            title=video["title"], channel=video["channel"], url=video["url"])
-        ready.append({"video_id": vid, "title": video["title"],
-                      "channel": video["channel"], "url": video["url"], "article": article})
+        ready.append({"video_id": vid, "title": video["title"], "channel": video["channel"],
+                      "url": video["url"], "article": article, "summary": summary})
 
     if not ready:
         print("\nNo articles ready to send.")

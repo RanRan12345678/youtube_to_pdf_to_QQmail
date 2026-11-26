@@ -120,6 +120,41 @@ Second paragraph in English.
         return None
 
 
+def summarize_article(article_text, limit=100):
+    """
+    Ask MiniMax to write a short Simplified Chinese summary (~100 chars)
+    of the article, for display in the newsletter table of contents.
+    """
+    prompt = f"""Below is a magazine article. Write a summary of it in Simplified Chinese, at most 100 Chinese characters, for display in a table of contents.
+
+Rules:
+- Output ONLY the summary text. No title, no quotes, no prefix like "总结：", no extra commentary.
+- Capture the core topic and the single most interesting takeaway.
+- Plain text only, no markdown.
+
+ARTICLE:
+{article_text}
+
+---
+
+Write the summary now (max 100 Chinese characters):"""
+
+    try:
+        message = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        summary = "".join(_extract_text(message)).strip()
+        if not summary:
+            return None
+        summary = summary.splitlines()[0].strip()
+        return summary[:limit]
+    except Exception as e:
+        print(f"  ⚠ Error generating summary: {type(e).__name__}: {e}")
+        return None
+
+
 def write_articles_for_videos(videos):
     """
     Generate articles for all videos with transcripts.

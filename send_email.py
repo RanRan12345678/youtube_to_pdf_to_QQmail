@@ -4,6 +4,8 @@ Sends the generated articles as a nicely formatted email newsletter with EPUB an
 """
 
 import os
+import re
+import hashlib
 import smtplib
 import markdown
 import requests
@@ -18,6 +20,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.platypus.tableofcontents import TableOfContents
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -28,6 +31,42 @@ load_dotenv()
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 PUSHPLUS_TOKEN = os.getenv("PUSHPLUS_TOKEN")
+
+
+def _article_excerpt(article_text, limit=100):
+    """Fallback: take the first non-heading paragraph of an article as the intro."""
+    for line in article_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        plain = re.sub(r"[*_`>]+", "", line)
+        return plain[:limit] + ("…" if len(plain) > limit else "")
+    return ""
+
+
+def _article_summary(article):
+    """Prefer the AI-generated summary; fall back to the first paragraph excerpt."""
+    return article.get("summary") or _article_excerpt(article["article"])
+
+
+class NewsletterDoc(SimpleDocTemplate):
+    """Doc template that feeds article headers into the PDF TableOfContents."""
+
+    def afterFlowable(self, flowable):
+        if isinstance(flowable, Paragraph) and getattr(flowable.style, "name", "") == "ArticleTitle":
+            entry = getattr(flowable, "_toc_entry", None)
+            if not entry:
+                return
+            key = "toc-" + hashlib.sha1(entry["title"].encode("utf-8")).hexdigest()[:10]
+            self.canv.bookmarkPage(key)
+            text = (
+                f'<b>{entry["title"]}</b><br/>'
+                f'<font size="8" color="#666666">'
+                f'简介：{entry["intro"]}<br/>'
+                f'作者：{entry["author"]} ｜ 创建时间：{entry["created"]}'
+                f'</font>'
+            )
+            self.notify("TOCEntry", (0, text, self.page, key))
 
 
 def create_epub(articles):
@@ -90,6 +129,23 @@ def create_epub(articles):
     )
     book.add_item(nav_css)
 
+    created = datetime.now().strftime("%Y-%m-%d")
+    toc_rows = []
+    for i, article in enumerate(articles):
+        excerpt = _article_summary(article)
+        toc_rows.append(
+            f'<p><a href="chapter_{i+1}.xhtml"><b>{i+1}. {article["title"]}</b></a><br/>'
+            f'<small>作者：{article["channel"]} ｜ 创建时间：{created}<br/>'
+            f'简介：{excerpt}</small></p>'
+        )
+    toc_page = epub.EpubHtml(title="目录 · Contents", file_name="toc_page.xhtml", lang="zh")
+    toc_page.content = (
+        '<html><head><link rel="stylesheet" type="text/css" href="style/nav.css"/></head>'
+        f'<body><h1>目录 · Contents</h1>{"".join(toc_rows)}</body></html>'
+    )
+    toc_page.add_item(nav_css)
+    book.add_item(toc_page)
+
     chapters = []
 
     # Create a chapter for each article
@@ -124,14 +180,14 @@ def create_epub(articles):
         chapters.append(chapter)
 
     # Create table of contents
-    book.toc = tuple(chapters)
+    book.toc = tuple([toc_page] + chapters)
 
     # Add navigation files
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
 
     # Set the reading order
-    book.spine = ["nav"] + chapters
+    book.spine = ["nav", toc_page] + chapters
 
     # Write the EPUB file
     epub.write_epub(filepath, book)
@@ -203,7 +259,7 @@ def create_pdf(articles):
     filepath = os.path.join(os.path.dirname(__file__), filename)
 
     # Create PDF document
-    doc = SimpleDocTemplate(
+    doc = NewsletterDoc(
         filepath,
         pagesize=letter,
         rightMargin=72,
@@ -289,6 +345,32 @@ def create_pdf(articles):
         fontName=chinese_font
     )
 
+    toc_entry_style = ParagraphStyle(
+        'TOCEntryStyle',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=15,
+        spaceAfter=14,
+        fontName=chinese_font
+    )
+
+    article_meta_style = ParagraphStyle(
+        'ArticleMeta',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.gray,
+        spaceAfter=20,
+        fontName=chinese_font
+    )
+
+    article_title_style = ParagraphStyle(
+        'ArticleTitle',
+        parent=title_style,
+        fontSize=20,
+        alignment=TA_LEFT,
+        spaceAfter=10
+    )
+
     # Build the story (content)
     story = []
 
@@ -305,8 +387,27 @@ def create_pdf(articles):
     )))
     story.append(PageBreak())
 
+    story.append(Paragraph("目录 · Contents", title_style))
+    story.append(Spacer(1, 0.3*inch))
+    toc = TableOfContents()
+    toc.levelStyles = [toc_entry_style]
+    toc.dotsMinLevel = 0
+    story.append(toc)
+    story.append(PageBreak())
+
     # Add each article
     for i, article in enumerate(articles):
+        created = datetime.now().strftime("%Y-%m-%d")
+        header = Paragraph(f"{i+1}. {article['title']}", article_title_style)
+        header._toc_entry = {
+            "title": article['title'],
+            "intro": _article_summary(article),
+            "author": article['channel'],
+            "created": created,
+        }
+        story.append(header)
+        story.append(Paragraph(f"作者：{article['channel']} ｜ 创建时间：{created}", article_meta_style))
+
         # Convert markdown article to HTML, then to paragraphs
         article_html = markdown.markdown(article['article'])
         
@@ -356,8 +457,7 @@ def create_pdf(articles):
         if i < len(articles) - 1:
             story.append(PageBreak())
 
-    # Build the PDF
-    doc.build(story)
+    doc.multiBuild(story)
 
     print(f"  ✓ Created PDF: {filename}")
     return filepath

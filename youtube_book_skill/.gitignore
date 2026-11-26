@@ -1,0 +1,6 @@
+config.json
+videos_state.json
+transcripts_cache.json
+articles/
+*.pdf
+__pycache__/
