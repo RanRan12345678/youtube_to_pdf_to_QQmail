@@ -6,6 +6,10 @@ on:
     - cron: "0 23 * * *"
   workflow_dispatch:  # 也支持手动触发（Actions 面板里点 Run workflow）
 
+concurrency:
+  group: daily-newsletter
+  cancel-in-progress: false
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -37,13 +41,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            videos_state.json
             transcripts_cache.json
-            processed_videos.json
-            articles_pending.json
-          # key 用 repo 名 + 固定前缀；restore-keys 让缓存能被旧版本命中
-          key: newsletter-cache-${{ runner.os }}
+            articles/
+          # key 含 run_id 保证每次唯一 → 必然保存新缓存；
+          # restore-keys 前缀命中让状态从最近一次运行延续
+          key: newsletter-cache-v2-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
-            newsletter-cache-
+            newsletter-cache-v2-${{ runner.os }}-
 
       # ---- 运行时拼 .env（不进 git，完全从 Secrets 注入） ----
       - name: Create .env from Secrets
